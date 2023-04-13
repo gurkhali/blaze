@@ -103,6 +103,7 @@ class BlazeposeDepthai:
 
         self.device = dai.Device()
         self.xyz = False
+        self.hips_shoulders = False
         
         if input_src == None or input_src == "rgb" or input_src == "rgb_laconic":
             self.input_type = "rgb" # OAK* internal color camera
@@ -506,6 +507,7 @@ class BlazeposeDepthai:
                         body.xyz = self.filter_xyz.apply(body.xyz)
                     body.xyz_zone = np.array(res["xyz_zone"])
                     body.xyz_ref_coords_pixel = np.mean(body.xyz_zone.reshape((2,2)), axis=0)
+                    body.hips_shoulders = np.array(res["hips_shoulders"])
 
 
         else:

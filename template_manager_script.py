@@ -38,6 +38,19 @@ class SmoothingFilter:
 
 filter_x = SmoothingFilter(0.5)
 filter_y = SmoothingFilter(0.5)
+
+filter_x_rh = SmoothingFilter(0.5)
+filter_y_rh = SmoothingFilter(0.5)
+
+filter_x_rs = SmoothingFilter(0.5)
+filter_y_rs = SmoothingFilter(0.5)
+
+filter_x_lh = SmoothingFilter(0.5)
+filter_y_lh = SmoothingFilter(0.5)
+
+filter_x_ls = SmoothingFilter(0.5)
+filter_y_ls = SmoothingFilter(0.5)
+
 ${_IF_XYZ}
 
 # BufferMgr is used to statically allocate buffers once 
@@ -56,7 +69,7 @@ class BufferMgr:
 
 buffer_mgr = BufferMgr()
 
-def send_result(type, lm_score=0, rect_center_x=0, rect_center_y=0, rect_size=0, rotation=0, lms=0, lms_world=0, xyz_ref=0, xyz=0, xyz_zone=0):
+def send_result(type, lm_score=0, rect_center_x=0, rect_center_y=0, rect_size=0, rotation=0, lms=0, lms_world=0, xyz_ref=0, xyz=0, xyz_zone=0, hips_shoulders=0):
     # type : 0, 1 or 2
     #   0 : pose detection only (detection score < threshold)
     #   1 : pose detection + landmark regression
@@ -64,7 +77,7 @@ def send_result(type, lm_score=0, rect_center_x=0, rect_center_y=0, rect_size=0,
     result = dict([("type", type), ("lm_score", lm_score), ("rotation", rotation),
             ("rect_center_x", rect_center_x), ("rect_center_y", rect_center_y), ("rect_size", rect_size), 
             ("lms", lms), ('lms_world', lms_world),
-            ("xyz_ref", xyz_ref), ("xyz", xyz), ("xyz_zone", xyz_zone)])
+            ("xyz_ref", xyz_ref), ("xyz", xyz), ("xyz_zone", xyz_zone), ("hips_shoulders", hips_shoulders)])
     result_serial = marshal.dumps(result, 2)
     buffer = buffer_mgr(len(result_serial))  
     buffer.getData()[:] = result_serial
@@ -91,6 +104,34 @@ def is_visible(lm_id):
 def is_in_image(sqn_x, sqn_y):
     # Is the point (sqn_x, sqn_y) is included in the useful part of the image (excluding the pads)?
     return  norm_pad_size < sqn_y < 1 - norm_pad_size
+
+def add_roi(cfg, lms, kp1, box_size, filter_x, filter_y):
+    rrn_xyz_ref_x = (lms[5*kp1]) / 256 # (256 for normalizing)
+    rrn_xyz_ref_y = (lms[5*kp1+1] ) / 256
+    sqn_xyz_ref_x, sqn_xyz_ref_y = rr2img(rrn_xyz_ref_x, rrn_xyz_ref_y) 
+    
+    #cfg = SpatialLocationCalculatorConfig()
+    conf_data = SpatialLocationCalculatorConfigData()
+    conf_data.depthThresholds.lowerThreshold = 100
+    conf_data.depthThresholds.upperThreshold = 10000
+    #half_zone_size = max(int(sqn_rr_size * ${_frame_size} / 90), 4)
+    half_zone_size = max(box_size, 4)
+
+    xc = filter_x.apply(sqn_xyz_ref_x * ${_frame_size} + ${_crop_w})
+    yc = filter_y.apply(sqn_xyz_ref_y * ${_frame_size} - ${_pad_h})
+
+    roi_left = max(0, xc - half_zone_size)
+    roi_right = min(${_img_w}-1, xc + half_zone_size)
+    roi_top = max(0, yc - half_zone_size)
+    roi_bottom = min(${_img_h}-1, yc + half_zone_size)
+    roi_topleft = Point2f(roi_left, roi_top)
+    roi_bottomright = Point2f(roi_right, roi_bottom)
+
+    conf_data.roi = Rect(roi_topleft, roi_bottomright)
+    cfg.addROI(conf_data)
+    ${_TRACE} ("Added ROI - Rect " + str(roi_left) + " " + str(roi_right) + " " + str(roi_top) + " " + str(roi_bottom) + " Box size " + str(box_size))
+    
+    return
 
 # send_new_frame_to_branch defines on which branch new incoming frames are sent
 # 1 = pose detection branch 
@@ -121,6 +162,18 @@ while True:
         ${_IF_XYZ}
         filter_x.reset()
         filter_y.reset()
+
+        filter_x_rh.reset()
+        filter_y_rh.reset()
+        
+        filter_x_rs.reset()
+        filter_y_rs.reset()
+    
+        filter_x_lh.reset()
+        filter_y_lh.reset()
+        
+        filter_x_ls.reset()
+        filter_y_ls.reset()
         ${_IF_XYZ}
         
 
@@ -137,6 +190,7 @@ while True:
     cfg = ImageManipConfig()
     cfg.setCropRotatedRect(rr, True)
     cfg.setResize(256, 256)
+
     node.io['pre_lm_manip_cfg'].send(cfg)
     ${_TRACE} ("Manager sent config to pre_lm manip")
 
@@ -151,6 +205,7 @@ while True:
         xyz = 0
         xyz_zone = 0
         xyz_ref = 0
+        hips_shoulders = 0
         # Query xyz
         ${_IF_XYZ}
         # Choosing the reference point: mid hips if hips visible, or mid shoulders otherwise
@@ -172,11 +227,12 @@ while True:
             if is_in_image(sqn_xyz_ref_x, sqn_xyz_ref_y):
                 xyz_ref = 2
         if xyz_ref:
-            cfg = SpatialLocationCalculatorConfig()
+            #cfg = SpatialLocationCalculatorConfig()
             conf_data = SpatialLocationCalculatorConfigData()
             conf_data.depthThresholds.lowerThreshold = 100
             conf_data.depthThresholds.upperThreshold = 10000
             half_zone_size = max(int(sqn_rr_size * ${_frame_size} / 90), 4)
+            
             xc = filter_x.apply(sqn_xyz_ref_x * ${_frame_size} + ${_crop_w})
             yc = filter_y.apply(sqn_xyz_ref_y * ${_frame_size} - ${_pad_h})
             roi_left = max(0, xc - half_zone_size)
@@ -188,6 +244,15 @@ while True:
             conf_data.roi = Rect(roi_topleft, roi_bottomright)
             cfg = SpatialLocationCalculatorConfig()
             cfg.addROI(conf_data)
+
+            # add rois
+            if is_visible(right_shoulder) and is_visible(left_shoulder):
+                box_size = round(abs(lms[5*right_shoulder] - lms[5*left_shoulder]) / 8)
+                add_roi(cfg, lms, right_hip, box_size, filter_x_rh, filter_y_rh)
+                add_roi(cfg, lms, left_hip, box_size, filter_x_lh, filter_y_lh)
+                add_roi(cfg, lms, right_shoulder, box_size, filter_x_rs, filter_y_rs)
+                add_roi(cfg, lms, left_shoulder, box_size, filter_x_ls, filter_y_ls)
+        
             node.io['spatial_location_config'].send(cfg)
             ${_TRACE} ("Manager sent ROI to spatial_location_config")
             
@@ -198,13 +263,26 @@ while True:
             xyz = [float(coords.x), float(coords.y), float(coords.z)]
             roi = xyz_data[0].config.roi
             xyz_zone = [int(roi.topLeft().x - ${_crop_w}), int(roi.topLeft().y), int(roi.bottomRight().x - ${_crop_w}), int(roi.bottomRight().y)]
+
+           # get data
+            if is_visible(right_shoulder) and is_visible(left_shoulder): 
+                # hips and shoulders
+                coords1 = xyz_data[1].spatialCoordinates
+                coords2 = xyz_data[2].spatialCoordinates
+                coords3 = xyz_data[3].spatialCoordinates
+                coords4 = xyz_data[4].spatialCoordinates
+                hips_shoulders = [float(coords1.x), float(coords1.y), float(coords1.z), float(coords2.x), float(coords2.y), float(coords2.z),\
+                                    float(coords3.x), float(coords3.y), float(coords3.z), float(coords4.x), float(coords4.y), float(coords4.z)]
+                
+    
         else:
             xyz = [0.0] * 3
             xyz_zone = [0] * 4
+            hips_shoulders = [0] * 12
         ${_IF_XYZ}
 
         # Send result to host
-        send_result(send_new_frame_to_branch, lm_score, sqn_rr_center_x, sqn_rr_center_y, sqn_rr_size, rotation, lms, lms_world, xyz_ref, xyz, xyz_zone)
+        send_result(send_new_frame_to_branch, lm_score, sqn_rr_center_x, sqn_rr_center_y, sqn_rr_size, rotation, lms, lms_world, xyz_ref, xyz, xyz_zone, hips_shoulders)
         
         if not ${_force_detection}:
             send_new_frame_to_branch = 2 
