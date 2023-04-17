@@ -231,7 +231,7 @@ while True:
             conf_data = SpatialLocationCalculatorConfigData()
             conf_data.depthThresholds.lowerThreshold = 100
             conf_data.depthThresholds.upperThreshold = 10000
-            half_zone_size = max(int(sqn_rr_size * ${_frame_size} / 90), 4)
+            half_zone_size = max(int(sqn_rr_size * ${_frame_size} / 90), 30)
             
             xc = filter_x.apply(sqn_xyz_ref_x * ${_frame_size} + ${_crop_w})
             yc = filter_y.apply(sqn_xyz_ref_y * ${_frame_size} - ${_pad_h})
@@ -271,10 +271,22 @@ while True:
                 coords2 = xyz_data[2].spatialCoordinates
                 coords3 = xyz_data[3].spatialCoordinates
                 coords4 = xyz_data[4].spatialCoordinates
+
                 hips_shoulders = [float(coords1.x), float(coords1.y), float(coords1.z), float(coords2.x), float(coords2.y), float(coords2.z),\
                                     float(coords3.x), float(coords3.y), float(coords3.z), float(coords4.x), float(coords4.y), float(coords4.z)]
-                
-    
+
+                '''
+                data1 = xyz_data[1].config.roi
+                data2 = xyz_data[2].config.roi
+                data3 = xyz_data[3].config.roi
+                data4 = xyz_data[4].config.roi
+
+                rect_info = [data1.topLeft().x, data1.topLeft().y, data1.bottomRight().x, data1.bottomRight().y,\
+                                    data2.topLeft().x, data2.topLeft().y, data2.bottomRight().x, data2.bottomRight().y,\
+                                    data3.topLeft().x, data3.topLeft().y, data3.bottomRight().x, data3.bottomRight().y,\
+                                    data4.topLeft().x, data4.topLeft().y, data4.bottomRight().x, data4.bottomRight().y]
+                hips_shoulders.append(*rect_info)
+                '''
         else:
             xyz = [0.0] * 3
             xyz_zone = [0] * 4
